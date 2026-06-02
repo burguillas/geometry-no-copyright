@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cube Jump - Juego de Plataformas</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        #gameContainer {
+            text-align: center;
+        }
+        
+        canvas {
+            border: 3px solid #0f3460;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(15, 52, 96, 0.5);
+        }
+        
+        #ui {
+            color: white;
+            margin-bottom: 10px;
+        }
+        
+        #score {
+            font-size: 24px;
+            font-weight: bold;
+            color: #e94560;
+        }
+        
+        #instructions {
+            color: #aaa;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        
+        #gameOver {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 10px;
+            color: white;
+            text-align: center;
+        }
+        
+        #gameOver h2 {
+            color: #e94560;
+            margin-bottom: 15px;
+        }
+        
+        #restartBtn {
+            background: #e94560;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: transform 0.2s;
+        }
+        
+        #restartBtn:hover {
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <div id="score">Puntuación: 0</div>
+            <div id="instructions">Haz clic, presiona ESPACIO o toca la pantalla para saltar</div>
+        </div>
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+        <div id="gameOver">
+            <h2>¡Game Over!</h2>
+            <p>Puntuación final: <span id="finalScore">0</span></p>
+            <button id="restartBtn">Reintentar</button>
+        </div>
+    </div>
+
+    <script>
+        // ============================================
+        // CONFIGURACIÓN DEL JUEGO
+        // ============================================
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameOverScreen = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+        const restartBtn = document.getElementById('restartBtn');
+
+        // Constantes del juego
+        const GRAVITY = 0.6;           // Fuerza de gravedad
+        const JUMP_FORCE = -12;        // Fuerza del salto (negativo porque Y crece hacia abajo)
+        const GROUND_Y = 350;          // Altura del suelo
+        const GAME_SPEED_START = 5;    // Velocidad inicial
+        const SPEED_INCREMENT = 0.001; // Cuánto aumenta la velocidad
+        
+        // ============================================
+        // ESTADO DEL JUEGO
+        // ============================================
+        let gameRunning = false;
+        let score = 0;
+        let gameSpeed = GAME_SPEED_START;
+        let frames = 0;
+        
+        // ============================================
+        // OBJETO JUGADOR (el cubo)
+        // ============================================
+        const player = {
+            x: 100,                     // Posición horizontal fija
+            y: GROUND_Y - 40,           // Posición vertical
+            width: 40,
+            height: 40,
+            velocityY: 0,               // Velocidad vertical
+            isJumping: false,           // ¿Está en el aire?
+            rotation: 0,                // Rotación visual (efecto estilo Geometry Dash)
+            color: '#00d4ff',
+            
+            // Método para hacer saltar al jugador
+            jump() {
+                if (!this.isJumping) {
+                    this.velocityY = JUMP_FORCE;
+                    this.isJumping = true;
+                }
+            },
+            
+            // Actualizar física del jugador
+            update() {
+                // Aplicar gravedad
+                this.velocityY += GRAVITY;
+                this.y += this.velocityY;
+                
+                // Rotar mientras está en el aire
+                if (this.isJumping) {
+                    this.rotation += 0.15;
+                } else {
+                    // Alinear rotación al suelo
+                    this.rotation = Math.round(this.rotation / (Math.PI / 2)) * (Math.PI / 2);
+                }
+                
+                // Colisión con el suelo
+                if (this.y + this.height > GROUND_Y) {
+                    this.y = GROUND_Y - this.height;
+                    this.velocityY = 0;
+                    this.isJumping = false;
+                    this.rotation = 0;
+                }
+            },
+            
+            // Dibujar al jugador
+            draw() {
+                ctx.save();
+                ctx.translate(this.x + this.width / 2, this.y + this.height / 2);
+                ctx.rotate(this.rotation);
+                
+                // Dibujar cubo con efecto de brillo
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 20;
+                ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+                
+                // Borde del cubo
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-this.width / 2, -this.height / 2, this.width, this.height);
+                
+                // Ojos del cubo (para darle carácter)
+                ctx.fillStyle = '#fff';
+                ctx.shadowBlur = 0;
+                ctx.fillRect(8, -8, 8, 8);
+                ctx.fillRect(8, 0, 8, 8);
+                
+                ctx.restore();
+            }
+        };
+
+        // ============================================
+        // SISTEMA DE OBSTÁCULOS
+        // ============================================
+        let obstacles = [];
+        
+        // Clase para crear obstáculos
+        class Obstacle {
+            constructor() {
+                this.width = 30 + Math.random() * 20;  // Ancho aleatorio
+                this.height = 40 + Math.random() * 60; // Altura aleatoria
+                this.x = canvas.width;                  // Empezar fuera de pantalla
+                this.y = GROUND_Y - this.height;        // Posicionar en el suelo
+                this.color = '#e94560';
+                this.passed = false;                    // ¿El jugador ya pasó este obstáculo?
+            }
+            
+            update() {
+                this.x -= gameSpeed;  // Mover hacia la izquierda
+            }
+            
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 15;
+                
+                // Dibujar obstáculo con forma de pico/triángulo
+                ctx.beginPath();
+                ctx.moveTo(this.x, this.y + this.height);
+                ctx.lineTo(this.x + this.width / 2, this.y);
+                ctx.lineTo(this.x + this.width, this.y + this.height);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Borde brillante
+                ctx.strokeStyle = '#ff6b6b';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+            }
+        }
+
+        // ============================================
+        // FUNCIONES DEL JUEGO
+        // ============================================
+        
+        // Dibujar el fondo y suelo
+        function drawBackground() {
+            // Fondo con gradiente
+            const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            gradient.addColorStop(0, '#0f0f23');
+            gradient.addColorStop(1, '#1a1a3e');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Líneas de cuadrícula decorativas (efecto retro)
+            ctx.strokeStyle = 'rgba(0, 212, 255, 0.1)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < canvas.width; i += 50) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i, canvas.height);
+                ctx.stroke();
+            }
+            
+            // Suelo
+            ctx.fillStyle = '#0f3460';
+            ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+            
+            // Línea del suelo con brillo
+            ctx.strokeStyle = '#00d4ff';
+            ctx.lineWidth = 3;
+            ctx.shadowColor = '#00d4ff';
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+            ctx.moveTo(0, GROUND_Y);
+            ctx.lineTo(canvas.width, GROUND_Y);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        }
+
+        // Verificar colisiones entre jugador y obstáculo
+        function checkCollision(player, obstacle) {
+            // Usar hitboxes reducidas para ser más justo con el jugador
+            const padding = 5;
+            return player.x + padding < obstacle.x + obstacle.width - padding &&
+                   player.x + player.width - padding > obstacle.x + padding &&
+                   player.y + padding < obstacle.y + obstacle.height &&
+                   player.y + player.height > obstacle.y + padding;
+        }
+
+        // Generar obstáculos periódicamente
+        function spawnObstacles() {
+            // Crear obstáculo cada 90-150 frames (aleatorio para variedad)
+            if (frames % Math.floor(90 + Math.random() * 60) === 0) {
+                obstacles.push(new Obstacle());
+            }
+        }
+
+        // Actualizar estado del juego
+        function update() {
+            if (!gameRunning) return;
+            
+            frames++;
+            gameSpeed += SPEED_INCREMENT; // Aumentar dificultad gradualmente
+            
+            // Actualizar jugador
+            player.update();
+            
+            // Generar y actualizar obstáculos
+            spawnObstacles();
+            
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                obstacles[i].update();
+                
+                // Verificar colisión
+                if (checkCollision(player, obstacles[i])) {
+                    gameOver();
+                    return;
+                }
+                
+                // Contar puntos al pasar obstáculos
+                if (!obstacles[i].passed && obstacles[i].x + obstacles[i].width < player.x) {
+                    obstacles[i].passed = true;
+                    score++;
+                    scoreElement.textContent = `Puntuación: ${score}`;
+                }
+                
+                // Eliminar obstáculos fuera de pantalla
+                if (obstacles[i].x + obstacles[i].width < 0) {
+                    obstacles.splice(i, 1);
+                }
+            }
+        }
+
+        // Dibujar todo
+        function draw() {
+            // Limpiar canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Dibujar fondo
+            drawBackground();
+            
+            // Dibujar obstáculos
+            obstacles.forEach(obstacle => obstacle.draw());
+            
+            // Dibujar jugador
+            player.draw();
+        }
+
+        // Bucle principal del juego
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Game Over
+        function gameOver() {
+            gameRunning = false;
+            finalScoreElement.textContent = score;
+            gameOverScreen.style.display = 'block';
+        }
+
+        // Reiniciar juego
+        function restart() {
+            gameRunning = true;
+            score = 0;
+            frames = 0;
+            gameSpeed = GAME_SPEED_START;
+            obstacles = [];
+            player.y = GROUND_Y - player.height;
+            player.velocityY = 0;
+            player.rotation = 0;
+            scoreElement.textContent = 'Puntuación: 0';
+            gameOverScreen.style.display = 'none';
+        }
+
+        // ============================================
+        // CONTROLES
+        // ============================================
+        
+        // Saltar con clic, tecla espacio o toque
+        function handleJump(e) {
+            if (e.type === 'keydown' && e.code !== 'Space') return;
+            if (e.type === 'keydown') e.preventDefault();
+            
+            if (!gameRunning && gameOverScreen.style.display === 'block') {
+                restart();
+            } else if (gameRunning) {
+                player.jump();
+            } else {
+                gameRunning = true;
+                player.jump();
+            }
+        }
+
+        // Event listeners
+        window.addEventListener('keydown', handleJump);
+        canvas.addEventListener('mousedown', handleJump);
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            handleJump(e);
+        });
+        restartBtn.addEventListener('click', restart);
+
+        // Iniciar el bucle del juego
+        gameLoop();
+    </script>
+</body>
+</html>
